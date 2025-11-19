@@ -13,7 +13,6 @@ MODEL_NAME=""
 # ---- 默认参数 ----
 HOST="localhost"
 PORT=8000
-BURSTINESS=100
 DATASET_NAME="random"
 
 # ---- 参数解析 ----
@@ -47,10 +46,34 @@ if [[ -z "$MODEL_NAME" ]]; then
 fi
 
 # ---- 定义测试组合 ----
-CONCURRENCY_LIST=(1 2)
+CONCURRENCY_LIST=(1 2 4 8 16 32 64 128)
 LENGTH_PAIRS=(
   # 平衡场景（10种）
   "256 256"
+  "512 512"
+  "1024 1024"
+  "2048 2048"
+  "4096 4096"
+  "8192 8192"
+  "16384 16384"
+  "32768 32768"
+  "65536 65536"
+  "131072 131072"
+  # 不平衡场景（7种）
+  # RAG场景：大输入小输出
+  "2048 1024"
+  "4096 1024"
+
+  # 内容生成：小输入大输出
+  "128 2048"
+
+  # 内容审查/简要分析：大输入小输出
+  "2048 128"
+
+  # 长复杂推理
+  "1024 5000"
+  "1024 8192"
+  "1024 16384"
 )
 
 # ---- 创建日志目录 ----
@@ -92,11 +115,10 @@ for conc in "${CONCURRENCY_LIST[@]}"; do
       --model-name "$MODEL_NAME" \
       --host "$HOST" \
       --port "$PORT" \
-      --request-rate "$conc" \
+      --max-concurrency "$conc" \
       --num-prompts "$conc" \
       --input-len "$INPUT_LEN" \
       --output-len "$OUTPUT_LEN" \
-      --burstiness "$BURSTINESS" \
       --dataset "$DATASET_NAME" \
       --extra $EXTRA_ARGS > /dev/null 2>&1
 
