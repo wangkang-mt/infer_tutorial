@@ -34,7 +34,7 @@ bash vllm_bench_with_gpu.sh \
   
 ## 3.1 log 解析
 log 自动保存在./bench_logs/Qwen3-32B_tp8_dtypefp16_< time > 目录：
-- Qwen3-32B_vllm_result.json 保存每个测试的结果（已自动拼接 GPU util 等相关信息）
+- Qwen3-32B_vllm_result.json 保存每个测试的结果（已自动拼接 GPU util 等相关信息）,保存形式参看[result.json](realtime_bench_plot/test_log.json)
 - gpu_utilization_c<并发数>_in<输入>_out<输出> ：目录保存测试项对应GPU相关信息，包含显存占用，GPU利用率，以及温度
 - client_log：目录保存各测试组合对应 vllm serve bench 日志
 
