@@ -28,6 +28,7 @@ bash vllm_bench_with_gpu.sh \
     --gpu-num 8
 ```
 - gpu-num 和 dtype： 自动生成./bench_logs/Qwen3-32B_tp8_dtypefp16_< time > 目录；另外脚本自动检测每个测试组合对应GPU信息，如利用率，显存占用以及温度等信息，gpu-num 用于指定前 N 张卡用来监控
+- vllm_bench_with_gpu.sh：72 ~ 100 行可配置测试并发数以及输入输出组合！
 
 ![vllm_bench](./assets/vllm_bench.png)
   
