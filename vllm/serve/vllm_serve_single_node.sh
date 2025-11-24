@@ -30,6 +30,7 @@ cat << EOF
   --model-path PATH            （必填）模型路径
   --served-model-name NAME     服务模型名（默认自动从路径推断）
   --dtype DTYPE                默认: bfloat16
+  --quantization TYPE          权重量化精度
   --max-model-len N            最大上下文长度
   --tp, --tensor-parallel N    默认: 8
   --pp, --pipeline-parallel N  默认: 1(不可更改)
@@ -81,6 +82,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dtype)
       DTYPE="$2"
+      shift 2
+      ;;
+    --quantization)
+      TYPE="$2"
       shift 2
       ;;
     --max-model-len)
@@ -142,6 +147,7 @@ echo "🚀 启动 vLLM 推理服务..."
 echo " Model Path:         $MODEL_PATH"
 echo " Served Model Name:  $MODEL_NAME"
 echo " DType:              $DTYPE"
+echo " Quantization:       $TYPE"
 echo " Max Model Len:      ${MAX_LEN:-'(未设置)'}"
 echo " TP:                 $TP"
 echo " PP:                 $PP"
@@ -151,7 +157,6 @@ echo " Port:               $PORT"
 echo "========================================"
 
 # 启动命令
-
 CMD=(
   vllm serve
   "$MODEL_PATH"
@@ -169,17 +174,19 @@ CMD=(
 
 
 [[ -n "$MAX_LEN" ]] && CMD+=(--max-model-len "$MAX_LEN")
+[[ -n "$TYPE" ]] && CMD+=(--quantization "$TYPE")
 
 COMPILATION_CONFIG='{"cudagraph_capture_sizes":[1,2,3,4,5,6,7,8,10,12,14,16,18,20,24,28,30], "simple_cuda_graph": true}'
 CMD+=(--compilation-config "$COMPILATION_CONFIG")
 
-
 echo ""
 echo "🚀 启动命令："
-printf "%s " "${CMD[@]}"
+echo "VLLM_USE_V1=0 $(printf "%s " "${CMD[@]}")"
 echo ""
 echo ""
 
 # 执行
-# exec "${CMD[@]}" >> "$LOG_FILE" 2>&1
+export VLLM_USE_V1=0
+
 echo "💾 日志: $LOG_FILE"
+exec "${CMD[@]}" 2>&1 | tee "$LOG_FILE"

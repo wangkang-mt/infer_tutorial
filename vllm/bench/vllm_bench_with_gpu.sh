@@ -11,10 +11,11 @@ cat << EOF
 用法：
   bash $0 [参数...]
 参数列表：
-  --model-path PATH        （必填）模型文件夹路径，例如: /home/dist/DeepSeek-Coder-V2-Lite-Instruct
+  --model-path PATH       （必填）模型文件夹路径，例如: /home/dist/DeepSeek-Coder-V2-Lite-Instruct
   --model-name NAME        模型服务名，缺省则自动从路径推断
-  --gpu-num N              （必填）使用的 GPU 数量，用于生成日志目录以及 GPU util 监控
-  --dtype xxx              推理精度，仅用于生成日志标记
+  --gpu-num N             （必填）使用的 GPU 数量，用于生成日志目录以及 GPU util 监控
+  --dtype Dtype            推理精度，仅用于生成日志目录
+  --quant Quant            模型量化精度，仅用于生产日志目录
   --port PORT              默认: 8000
   --host HOST              默认: localhost
 示例：
@@ -45,6 +46,8 @@ while [[ "$#" -gt 0 ]]; do
         --gpu-num) GPU_NUM="$2"; shift ;;
         --port) PORT="$2"; shift ;;
         --host) HOST="$2"; shift ;;
+	--dtype) DTYPE="$2"; shift ;;
+	--quant) QUANT="$2"; shift ;;
         --help|-h) show_help; exit 0 ;;
         *) echo "未知参数: $1"; exit 1 ;;
     esac
@@ -100,8 +103,8 @@ LENGTH_PAIRS=(
 )
 
 # ---- 创建日志目录 ----
-# LOG_DIR="./bench_logs/${MODEL_NAME}_$(date +%Y%m%d_%H%M%S)"
-LOG_DIR="./bench_logs/${MODEL_NAME}_tp${GPU_NUM}_dtype${DTYPE}_$(date +%Y%m%d_%H%M%S)"
+#LOG_DIR="./bench_logs/${MODEL_NAME}_tp${GPU_NUM}_dtype${DTYPE}_quant${quant}_$(date +%Y%m%d_%H%M%S)"
+LOG_DIR="./bench_logs/${MODEL_NAME}_tp${GPU_NUM}_dtype${DTYPE}${quant:+_quant${quant}}_$(date +%Y%m%d_%H%M%S)"
 CLIENT_LOG_DIR="$LOG_DIR/client_log"
 mkdir -p "$CLIENT_LOG_DIR"
 
