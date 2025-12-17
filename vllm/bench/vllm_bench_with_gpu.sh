@@ -14,7 +14,7 @@ cat << EOF
 参数列表：
   --model-path PATH        （必填）模型路径
   --gpu-num N              （必填）推理用 GPU 数量，用于生成日志目录以及 GPU util 监控
-  --model-name NAME        模型服务名，缺省则自动从路径推断
+  --model-name NAME        模型服务名，缺省则自动从路径推断（不做大小写转换）
   --dtype xxx              推理精度，仅用于生成日志标记
   --port PORT              默认: 8000
   --host HOST              默认: localhost
@@ -25,7 +25,8 @@ cat << EOF
     --gpu-num 4 \\
     --dtype bf16
 
-  72 ~ 100 行可配置测试并发数以及输入输出组合！
+  1. 72 ~ 100 行可配置测试并发数以及输入输出组合！
+  2. 自动监控 GPU 利用率并合并至结果 JSON 中。
 EOF
 }
 

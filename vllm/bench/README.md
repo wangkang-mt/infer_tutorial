@@ -34,9 +34,11 @@ bash vllm_bench_with_gpu.sh \
   
 ## 3.1 log 解析
 log 自动保存在./bench_logs/Qwen3-32B_tp8_dtypefp16_< time > 目录：
-- Qwen3-32B_vllm_result.json 保存每个测试的结果（已自动拼接 GPU util 等相关信息）,保存形式参看[result.json](realtime_bench_plot/test_log.json)
-- gpu_utilization_c<并发数>_in<输入>_out<输出> ：目录保存测试项对应GPU相关信息，包含显存占用，GPU利用率，以及温度
-- client_log：目录保存各测试组合对应 vllm serve bench 日志
+- Qwen3-32B_vllm_result.json 保存每个测试项的结果（已自动拼接 GPU util 等相关信息）,保存形式参看[result.json](realtime_bench_plot/test_log.json)
+- gpu_utilization_c<并发数>_in<输入>_out<输出> ：保存每次 benchmark 测试对应的 GPU 监控信息，包括显存占用、GPU 利用率及温度。
+  - raw.log: 记录时间序列的前 gpu-num 张 GPU 平均状态，包括显存占用、GPU 利用率和温度，默认每 2 秒采样一次。
+  - result.log: 基于 raw.log 筛选并统计 GPU 数据，默认条件为 GPU 利用率 >10 且显存占用标准差 <2，输出时间维度的平均结果。
+- client_log：保存没个测试项对应 vllm serve bench 原生日志
 
 ## 3.2 实时解析
 可实时监控各测试项性能，用于探索性能。
@@ -46,5 +48,7 @@ pip install streamlit
 streamlit run realtime_bench_plot/realtime_bench_plot.py -- \
     --json-file ./bench_logs/Qwen3-32B_tp8_dtypefp16_< time >/Qwen3-32B_vllm_result.json \
     --metadata tp=8 dtype=fp16
+
+# --metedata 元信息，用于显示在 WebUI 中用于标识当前服务启动项等配置信息
 ```
 ![bench plot](./assets/bench_plot.png)

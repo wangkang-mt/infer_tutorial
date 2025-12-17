@@ -40,8 +40,7 @@ cat << EOF
     --port PORT                  （可选）默认 8000
 
     说明：
-    1. 为方便 bench 测试，脚本默认配置参数 --eager-eos;
-    2. 默认开启 cuda graph 优化，适用于大多数模型;
+    1. 默认开启 cuda graph 优化，适用于大多数模型;
 
   日志参数：
     --log-dir LOG_DIR         日志保存路径（默认保存在./vllm_serve_logs）
@@ -82,6 +81,7 @@ HOST="0.0.0.0"
 # LOG 
 LOG_FILE=""    # 自动基于 LOG_DIR 生成
 LOG_DIR="./vllm_serve_logs"
+TS=$(date +"%Y%m%d_%H%M%S")
 
 EXTRA_ARGS=()
 
@@ -155,7 +155,7 @@ fi
 
 # 设置日志文件路径
 if [[ -n "$LOG_DIR" ]]; then
-    LOG_FILE="${LOG_DIR}/vllm_serve_${MODEL_NAME}_tp${TP}_pp${PP}_dtype${DTYPE}.log"
+    LOG_FILE="${LOG_DIR}/vllm_serve_${MODEL_NAME}_tp${TP}_pp${PP}_dtype${DTYPE}_${TS}.log"
     mkdir -p "$LOG_DIR"
 fi
 
@@ -188,7 +188,6 @@ CMD=(
   --dtype "$DTYPE"
   --tensor-parallel-size "$TP"
   --pipeline-parallel-size "$PP"
-  --eager-eos
   --host "$HOST"
   --port "$PORT"
   "${EXTRA_ARGS[@]}"
@@ -200,13 +199,15 @@ CMD=(
 COMPILATION_CONFIG='{"cudagraph_capture_sizes":[1,2,3,4,5,6,7,8,10,12,14,16,18,20,24,28,30,32,50,64,100,128,256], "simple_cuda_graph": true}'
 CMD+=(--compilation-config "$COMPILATION_CONFIG")
 
-
+export VLLM_USE_V1=0
 echo ""
 echo "🚀 启动命令："
+printf "VLLM_USE_V1=0 "
 printf "%s " "${CMD[@]}"
 echo ""
 echo ""
 
 # 执行
-exec "${CMD[@]}" >> "$LOG_FILE" 2>&1
-echo "💾 日志: $LOG_FILE"
+# exec "${CMD[@]}" >> "$LOG_FILE" 2>&1
+exec > >(tee -a "$LOG_FILE") 2>&1
+exec "${CMD[@]}"

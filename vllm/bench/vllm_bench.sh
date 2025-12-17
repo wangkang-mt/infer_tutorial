@@ -33,6 +33,7 @@ show_help() {
     echo "  --dataset <名称>       数据集 (默认: random, 当前仅支持 random)"
     echo "  --extra args...      其他传递给 vllm bench serve 的参数"
     echo ""
+    echo "注意: 测试命令默认包含 --ignore-eos 参数。"
     echo "示例:"
     echo "  bash vllm_bench.sh --model-path /home/dist/DeepSeek-Coder-V2-Lite-Instruct --model-name deepseek"
     echo "==============================================="
@@ -69,25 +70,22 @@ if [[ -z "$MODEL_PATH" || -z "$MODEL_NAME" ]]; then
     exit 1
 fi
 
-# 生成随机种子
-SEED=$(date +%s)
 
 # 构建命令数组
 CMD=(
   vllm bench serve
   --backend vllm
   --model "$MODEL_PATH"
+  --trust-remote-code
   --served-model-name "$MODEL_NAME"
   --dataset-name "$DATASET_NAME"
-  --ignore-eos
-  --seed "$SEED"
-  --trust-remote-code
   --percentile-metrics "ttft,tpot,itl,e2el"
   --metric-percentiles "99"
   --host "$HOST"
   --port "$PORT"
   --random-input-len "$INPUT_LEN"
   --random-output-len "$OUTPUT_LEN"
+  --ignore-eos
   "${EXTRA_ARGS[@]}"
 )
 
@@ -103,7 +101,7 @@ echo "Host:          $HOST"
 echo "Port:          $PORT"
 echo "Dataset:       $DATASET_NAME"
 echo "Num Prompts:   ${NUM_PROMPTS:-1000}"
-echo "Max Concurrency: ${MAX_CONCURRENCY:-∞}"
+echo "Max Concurrency: ${MAX_CONCURRENCY:-None}"
 echo "Input Len:     $INPUT_LEN"
 echo "Output Len:    $OUTPUT_LEN"
 echo "----------------------------"
