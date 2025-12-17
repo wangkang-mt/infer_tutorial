@@ -14,6 +14,7 @@ cat << EOF
 参数列表：
   --model-path PATH        （必填）模型路径
   --gpu-num N              （必填）推理用 GPU 数量，用于生成日志目录以及 GPU util 监控
+  --config-file PATH      （可选）测试配置文件路径，默认: config/vllm_bench_config.txt
   --model-name NAME        模型服务名，缺省则自动从路径推断（不做大小写转换）
   --dtype xxx              推理精度，仅用于生成日志标记
   --port PORT              默认: 8000
@@ -38,6 +39,7 @@ MODEL_NAME=""
 HOST="localhost"
 PORT=8000
 DATASET_NAME="random"
+CONFIG_FILE="config/vllm_bench_config.txt"
 
 # ---- 参数解析 ----
 while [[ "$#" -gt 0 ]]; do
@@ -47,6 +49,7 @@ while [[ "$#" -gt 0 ]]; do
         --gpu-num) GPU_NUM="$2"; shift ;;
         --port) PORT="$2"; shift ;;
         --host) HOST="$2"; shift ;;
+        --config-file) CONFIG_FILE="$2"; shift ;;
         --help|-h) show_help; exit 0 ;;
         *) echo "未知参数: $1"; exit 1 ;;
     esac
@@ -71,35 +74,6 @@ if [[ -z "$MODEL_NAME" ]]; then
 fi
 
 # ---- 定义测试组合 ----
-CONCURRENCY_LIST=(1 2 4 8 16 32 64 128)
-LENGTH_PAIRS=(
-  # 平衡场景（10种）
-  "256 256"
-  "512 512"
-  "1024 1024"
-  "2048 2048"
-  "4096 4096"
-  "8192 8192"
-  "16384 16384"
-  "32768 32768"
-  "65536 65536"
-  "131072 131072"
-  # 不平衡场景（7种）
-  # RAG场景：大输入小输出
-  "2048 1024"
-  "4096 1024"
-
-  # 内容生成：小输入大输出
-  "128 2048"
-
-  # 内容审查/简要分析：大输入小输出
-  "2048 128"
-
-  # 长复杂推理
-  "1024 5000"
-  "1024 8192"
-  "1024 16384"
-)
 
 # ---- 创建日志目录 ----
 # LOG_DIR="./vllm_bench_logs/${MODEL_NAME}_$(date +%Y%m%d_%H%M%S)"
@@ -116,38 +90,46 @@ echo "Port:        $PORT"
 echo "日志输出目录: $LOG_DIR"
 echo "============================================"
 
-# ---- 执行批量测试 ----
-for conc in "${CONCURRENCY_LIST[@]}"; do
-  for pair in "${LENGTH_PAIRS[@]}"; do
-    IFS=' ' read -r INPUT_LEN OUTPUT_LEN <<< "$pair"
-    echo "▶️ 并发: ${conc}, 输入: ${INPUT_LEN}, 输出: ${OUTPUT_LEN}"
+# ---- 读取配置文件 ----
+while read -r line || [[ -n "$line" ]]; do
+    # 跳过注释或空行
+    [[ -z "$line" || "$line" =~ ^# ]] && continue
+
+    # 读取并发数、输入长度、输出长度
+    IFS=' ' read -r CONC INPUT_LEN OUTPUT_LEN <<< "$line"
+
+    echo "▶️请求数: ${CONC}, 并发: ${CONC}, 输入: ${INPUT_LEN}, 输出: ${OUTPUT_LEN}"
     LOG_FILE=$LOG_DIR/${MODEL_NAME}_vllm_result.json
-    GPU_LOG_DIR="${LOG_DIR}/gpu_utilization_c${conc}_in${INPUT_LEN}_out${OUTPUT_LEN}"
+    GPU_LOG_DIR="${LOG_DIR}/gpu_utilization_c${CONC}_in${INPUT_LEN}_out${OUTPUT_LEN}"
+
+    # GPU 监控启动
     python ../../gpu-monitor/mt-gmi-utilization.py \
       --gpu-num "${GPU_NUM}" \
       --interval 2 \
       --gpu-utilization-threshold 10.0 \
       --log-path "$GPU_LOG_DIR" \
-      --metadata "model_name=${MODEL_NAME} concurrency=${conc} input_len=${INPUT_LEN} output_len=${OUTPUT_LEN}" &
+      --metadata "model_name=${MODEL_NAME} concurrency=${CONC} input_len=${INPUT_LEN} output_len=${OUTPUT_LEN}" &
 
     GPU_MONITOR_PID=$!
     echo "⚙ GPU 监控启动, PID=$GPU_MONITOR_PID"
     
+    # 配置 vLLM bench log 参数
     VLLM_BENCH_LOG_ARGS="--save-result \
             --append-result \
             --result-filename ${LOG_FILE} \
-            --metadata model_name=${MODEL_NAME} concurrency=${conc} input_len=${INPUT_LEN} output_len=${OUTPUT_LEN}"
+            --metadata model_name=${MODEL_NAME} concurrency=${CONC} input_len=${INPUT_LEN} output_len=${OUTPUT_LEN}"
+            
     bash vllm_bench.sh \
       --model-path "$MODEL_PATH" \
       --model-name "$MODEL_NAME" \
       --host "$HOST" \
       --port "$PORT" \
-      --max-concurrency "$conc" \
-      --num-prompts "$conc" \
+      --max-concurrency "$CONC" \
+      --num-prompts "$CONC" \
       --input-len "$INPUT_LEN" \
       --output-len "$OUTPUT_LEN" \
       --dataset "$DATASET_NAME" \
-      --extra $VLLM_BENCH_LOG_ARGS >> ${CLIENT_LOG_DIR}/c"$conc"_i"$INPUT_LEN"_o"$OUTPUT_LEN".log 2>&1
+      --extra $VLLM_BENCH_LOG_ARGS >> ${CLIENT_LOG_DIR}/c"$CONC"_i"$INPUT_LEN"_o"$OUTPUT_LEN".log 2>&1
 
     # 终止 GPU 监控
     kill "$GPU_MONITOR_PID"
@@ -159,15 +141,14 @@ for conc in "${CONCURRENCY_LIST[@]}"; do
     echo "added gpu utilization to ${LOG_FILE}"
 
 
-    echo "✅ 已完成: 并发=${conc}, 输入=${INPUT_LEN}, 输出=${OUTPUT_LEN}"
+    echo "✅ 已完成: 并发=${CONC}, 输入=${INPUT_LEN}, 输出=${OUTPUT_LEN}"
     echo "   日志: $LOG_FILE"
     echo "--------------------------------------------"
 
     echo "⏳ 等待系统稳定(60s)..."
     sleep 60  # 等待一段时间，确保系统稳定
 
-  done
-done
+done < "$CONFIG_FILE"
 
 echo "🎯 所有批量测试已完成！结果日志保存在: $LOG_DIR"
 

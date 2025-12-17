@@ -208,6 +208,5 @@ echo ""
 echo ""
 
 # 执行
-# exec "${CMD[@]}" >> "$LOG_FILE" 2>&1
 exec > >(tee -a "$LOG_FILE") 2>&1
 exec "${CMD[@]}"
