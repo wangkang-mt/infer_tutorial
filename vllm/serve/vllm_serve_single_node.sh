@@ -27,24 +27,45 @@ cat << EOF
   bash $0 [参数...]
 
 参数列表：
-  --model-path PATH            （必填）模型路径
-  --served-model-name NAME     服务模型名（默认自动从路径推断）
-  --dtype DTYPE                默认: bfloat16
-  --max-model-len N            最大上下文长度
-  --tp, --tensor-parallel N    默认: 8
-  --pp, --pipeline-parallel N  默认: 1(不可更改)
-  --gpu-mem FLOAT              GPU 内存利用率(默认 0.7)
-  --host HOST                  默认 0.0.0.0
-  --port PORT                  默认 8000
-  --save-logs LOG_PATH             日志保存路径（默认保存当前目录）
+
+  vllm serve 启动参数：
+    --model-path PATH            （必填）模型路径
+    --served-model-name NAME     （可选）服务模型名（默认自动从路径推断）
+    --dtype DTYPE                （可选）默认: bfloat16
+    --max-model-len N            （可选）最大上下文长度
+    --tp, --tensor-parallel N    （可选）默认: 1
+    --pp, --pipeline-parallel N  （可选）默认: 1 (推荐不做更改)
+    --gpu-mem FLOAT              （可选）GPU 内存利用率(默认 0.9)
+    --host HOST                  （可选）默认 0.0.0.0
+    --port PORT                  （可选）默认 8000
+
+    说明：
+    1. 为方便 bench 测试，脚本默认配置参数 --eager-eos;
+    2. 默认开启 cuda graph 优化，适用于大多数模型;
+
+  日志参数：
+    --log-dir LOG_DIR         日志保存路径（默认保存在./vllm_serve_logs）
+
+  other：
+    可通过在命令行末尾添加额外参数实现，详见 vllm serve 文档。
 
 示例：
+  # 基础启动
   bash $0 \\
     --model-path /data/models/DeepSeek-R1-Distill-Qwen-32B \\
     --dtype bfloat16 \\
     --tp 8 \\
     --max-model-len 32768
 
+  # 额外参数示例
+  bash $0 \\
+    --model-path /data/models/DeepSeek-R1-Distill-Qwen-32B \\
+    --dtype bfloat16 \\
+    --tp 8 \\
+    --max-model-len 32768
+    --max-num-batched-tokens 32768 \
+    --max-seq-len-to-capture 32768 \
+    --no-enable-prefix-caching 
 EOF
 }
 
@@ -52,14 +73,14 @@ EOF
 MODEL_PATH=""
 MODEL_NAME=""
 DTYPE="bfloat16"
-TP=8
+TP=1
 PP=1
-GPU_MEM=0.7
+GPU_MEM=0.9
 PORT=8000
 HOST="0.0.0.0"
 
 # LOG 
-LOG_FILE=""
+LOG_FILE=""    # 自动基于 LOG_DIR 生成
 LOG_DIR="./vllm_serve_logs"
 
 EXTRA_ARGS=()
@@ -107,8 +128,8 @@ while [[ $# -gt 0 ]]; do
       HOST="$2"
       shift 2
       ;;
-    --save-logs)
-      LOG_FILE="$2"
+    --log-dir)
+      LOG_DIR="$2"
       shift 2
       ;;
     *)
@@ -132,7 +153,8 @@ if [[ -z "$MODEL_NAME" ]]; then
   echo "⚠️ 未指定 --served-model-name, 自动推断为: $MODEL_NAME"
 fi
 
-if [[ -z "$LOG_FILE" ]]; then
+# 设置日志文件路径
+if [[ -n "$LOG_DIR" ]]; then
     LOG_FILE="${LOG_DIR}/vllm_serve_${MODEL_NAME}_tp${TP}_pp${PP}_dtype${DTYPE}.log"
     mkdir -p "$LOG_DIR"
 fi
@@ -142,13 +164,17 @@ echo "🚀 启动 vLLM 推理服务..."
 echo " Model Path:         $MODEL_PATH"
 echo " Served Model Name:  $MODEL_NAME"
 echo " DType:              $DTYPE"
-echo " Max Model Len:      ${MAX_LEN:-'(未设置)'}"
+echo " Max Model Len:      ${MAX_LEN:-'(None)'}"
+echo " Max Concurrency:    ${MAX_CONCURRENCY:-'(None)'}"
 echo " TP:                 $TP"
 echo " PP:                 $PP"
 echo " GPU Mem Util:       $GPU_MEM"
 echo " Host:               $HOST"
 echo " Port:               $PORT"
+
+echo " Log File:          $LOG_FILE"
 echo "========================================"
+
 
 # 启动命令
 
@@ -162,6 +188,7 @@ CMD=(
   --dtype "$DTYPE"
   --tensor-parallel-size "$TP"
   --pipeline-parallel-size "$PP"
+  --eager-eos
   --host "$HOST"
   --port "$PORT"
   "${EXTRA_ARGS[@]}"
@@ -170,7 +197,7 @@ CMD=(
 
 [[ -n "$MAX_LEN" ]] && CMD+=(--max-model-len "$MAX_LEN")
 
-COMPILATION_CONFIG='{"cudagraph_capture_sizes":[1,2,3,4,5,6,7,8,10,12,14,16,18,20,24,28,30], "simple_cuda_graph": true}'
+COMPILATION_CONFIG='{"cudagraph_capture_sizes":[1,2,3,4,5,6,7,8,10,12,14,16,18,20,24,28,30,32,50,64,100,128,256], "simple_cuda_graph": true}'
 CMD+=(--compilation-config "$COMPILATION_CONFIG")
 
 
@@ -181,5 +208,5 @@ echo ""
 echo ""
 
 # 执行
-# exec "${CMD[@]}" >> "$LOG_FILE" 2>&1
+exec "${CMD[@]}" >> "$LOG_FILE" 2>&1
 echo "💾 日志: $LOG_FILE"

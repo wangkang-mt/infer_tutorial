@@ -30,7 +30,7 @@ show_help() {
     echo "  --num-prompts <数量>   请求数量 (默认: 1000)"
     echo "  --input-len <长度>     输入长度 (默认: 1024)"
     echo "  --output-len <长度>    输出长度 (默认: 1024)"
-    echo "  --dataset <名称>       数据集 (默认: random)"
+    echo "  --dataset <名称>       数据集 (默认: random, 当前仅支持 random)"
     echo "  --extra args...      其他传递给 vllm bench serve 的参数"
     echo ""
     echo "示例:"
