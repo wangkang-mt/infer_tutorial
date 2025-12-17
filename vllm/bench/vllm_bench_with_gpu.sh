@@ -1,10 +1,34 @@
 #!/usr/bin/env bash
 # ==========================================
 # vLLM 批量性能测试脚本
-# 作者: 
+# 作者: kang.wang-ext
 # ==========================================
 
 set -e
+
+show_help() {
+cat << EOF
+用法：
+  bash $0 [参数...]
+
+参数列表：
+  --model-path PATH        （必填）模型路径
+  --gpu-num N              （必填）推理用 GPU 数量，用于生成日志目录以及 GPU util 监控
+  --model-name NAME        模型服务名，缺省则自动从路径推断（不做大小写转换）
+  --dtype xxx              推理精度，仅用于生成日志标记
+  --port PORT              默认: 8000
+  --host HOST              默认: localhost
+示例：
+  bash $0 \\
+    --model-path /home/dist/DeepSeek-Coder-V2-Lite-Instruct \\
+    --model-name DeepSeek-Coder-V2-Lite-Instruct  \\
+    --gpu-num 4 \\
+    --dtype bf16
+
+  1. 72 ~ 100 行可配置测试并发数以及输入输出组合！
+  2. 自动监控 GPU 利用率并合并至结果 JSON 中。
+EOF
+}
 
 # ---- 必填参数 ----
 MODEL_PATH=""
@@ -23,6 +47,7 @@ while [[ "$#" -gt 0 ]]; do
         --gpu-num) GPU_NUM="$2"; shift ;;
         --port) PORT="$2"; shift ;;
         --host) HOST="$2"; shift ;;
+        --help|-h) show_help; exit 0 ;;
         *) echo "未知参数: $1"; exit 1 ;;
     esac
     shift
@@ -77,8 +102,10 @@ LENGTH_PAIRS=(
 )
 
 # ---- 创建日志目录 ----
-LOG_DIR="./bench_logs/${MODEL_NAME}_$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$LOG_DIR"
+# LOG_DIR="./vllm_bench_logs/${MODEL_NAME}_$(date +%Y%m%d_%H%M%S)"
+LOG_DIR="./vllm_bench_logs/${MODEL_NAME}_tp${GPU_NUM}_dtype${DTYPE}_$(date +%Y%m%d_%H%M%S)"
+CLIENT_LOG_DIR="$LOG_DIR/client_log"
+mkdir -p "$CLIENT_LOG_DIR"
 
 echo "============================================"
 echo "🚀 启动 vLLM 批量性能测试"
@@ -96,7 +123,7 @@ for conc in "${CONCURRENCY_LIST[@]}"; do
     echo "▶️ 并发: ${conc}, 输入: ${INPUT_LEN}, 输出: ${OUTPUT_LEN}"
     LOG_FILE=$LOG_DIR/${MODEL_NAME}_vllm_result.json
     GPU_LOG_DIR="${LOG_DIR}/gpu_utilization_c${conc}_in${INPUT_LEN}_out${OUTPUT_LEN}"
-    python mt-gmi-utilization.py \
+    python ../../gpu-monitor/mt-gmi-utilization.py \
       --gpu-num "${GPU_NUM}" \
       --interval 2 \
       --gpu-utilization-threshold 10.0 \
@@ -106,7 +133,7 @@ for conc in "${CONCURRENCY_LIST[@]}"; do
     GPU_MONITOR_PID=$!
     echo "⚙ GPU 监控启动, PID=$GPU_MONITOR_PID"
     
-    EXTRA_ARGS="--save-result \
+    VLLM_BENCH_LOG_ARGS="--save-result \
             --append-result \
             --result-filename ${LOG_FILE} \
             --metadata model_name=${MODEL_NAME} concurrency=${conc} input_len=${INPUT_LEN} output_len=${OUTPUT_LEN}"
@@ -120,7 +147,7 @@ for conc in "${CONCURRENCY_LIST[@]}"; do
       --input-len "$INPUT_LEN" \
       --output-len "$OUTPUT_LEN" \
       --dataset "$DATASET_NAME" \
-      --extra $EXTRA_ARGS > /dev/null 2>&1
+      --extra $VLLM_BENCH_LOG_ARGS >> ${CLIENT_LOG_DIR}/c"$conc"_i"$INPUT_LEN"_o"$OUTPUT_LEN".log 2>&1
 
     # 终止 GPU 监控
     kill "$GPU_MONITOR_PID"
