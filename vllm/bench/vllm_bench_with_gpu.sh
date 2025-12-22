@@ -50,10 +50,13 @@ auto_select_with_threshold() {
     # ---- 启动实时监控程序（后台）----
     if [[ -n "$THRESHOLD" ]]; then
       echo "👀 启动实时监控程序，阈值: $THRESHOLD"
+
+      
       python ./utils/auto_batch_selector.py \
-        --json-file "$LOG_FILE" \
+        --log-file "$LOG_FILE" \
         --threshold "$THRESHOLD" \
-        --output "$best_signal_file" &
+        --signal-file "$best_signal_file" \
+        --output "$LOG_DIR/best_results_with_threshold.json" &
       MONITOR_PID=$!
       echo "📡 监控进程 PID=$MONITOR_PID"
     fi
@@ -206,8 +209,8 @@ for pair in "${LENGTH_PAIRS[@]}"; do
     sleep 60  # 等待一段时间，确保系统稳定
 
     if [[ -f "$best_signal_file" ]]; then
-      echo "⚠️ input_len=${INPUT_LEN}, output_len=${OUTPUT_LEN} 在满足${THRESHOLD} 条件下的最优并发数为：${conc}"
       rm "$best_signal_file"
+      continue 2  # 跳出当前并发循环，进入下一个长度对测试
     fi
 
   done

@@ -74,8 +74,7 @@ class JsonTailReader:
     def _check_file(self):
         """检查文件是否存在，不存在则等待"""
         while not os.path.exists(self.filepath):
-            print(f"⚠️  等待文件出现: {self.filepath}")
-            time.sleep(2)
+            time.sleep(10)
     
     def read_new_lines(self) -> Generator[Dict, None, None]:
         """只读取新增的行"""
@@ -351,13 +350,10 @@ class MonitorMode:
                 return True
             else:
                 current_best = self.result_manager.get_best(io_key)
-                if current_best:
-                    # 只有当发现不满足条件的更大batch时，才确认最佳
-                    if current_best.concurrency < record.concurrency:
-                        print(f"🎯 发现最佳配置！IO={io_key} 最佳batch={current_best.concurrency}")
-                        self.signal_writer.write_best(current_best)
+                if current_best and not satisfy(record, self.threshold):
+                    self.signal_writer.write_best(current_best)
                     
-                    print(f"⛔ IO={io_key} batch={record.concurrency} 不满足，保留 batch={current_best.concurrency}")
+                    print(f"🎯  发现最佳配置: IO={io_key} batch={current_best.concurrency} 满足阈值")
                 else:
                     print(f"⚠️  IO={io_key} batch={record.concurrency} 不满足，尚无最佳")
                 return False
@@ -373,7 +369,6 @@ class MonitorMode:
         print(f"💾 输出文件: {self.args.output} (每个IO配置只保留最佳记录)")
         print(f"📢 信号文件: {self.args.signal_file}")
         print(f"📊 阈值配置: {self.threshold}")
-        print("按下 Ctrl+C 停止监控\n")
         
         self.running = True
         empty_cycles = 0
