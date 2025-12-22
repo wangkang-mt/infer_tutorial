@@ -31,8 +31,22 @@ bash vllm_bench_with_gpu.sh \
 - vllm_bench_with_gpu.sh：72 ~ 100 行可配置测试并发数以及输入输出组合！
 
 ![vllm_bench](./assets/vllm_bench.png)
-  
-## 3.1 log 解析
+
+## 3.1 基于阈值的最佳性能探索
+在给定 TTFT，TPOT 及 E2EL 延迟约束的前提下，自动探索不同输入 / 输出长度组合下，
+**满足阈值条件的最大并发（batch size）**，以获得受约束条件下的最优性能。  
+当某一固定 IO 组合下，已经找到满足阈值的最大 batch 后，
+将自动跳过该 IO 组合的后续测试，进入下一组 IO 配置。
+```shell
+# 示例：在 TTFT ≤ 400ms 且 TPOT ≤ 50ms 的约束条件下进行测试：
+# --threshold THRESHOLD     (可选) 监控阈值，格式: "ttft:100 tpot:50", 单位 ms, 允许的指标: ttft, tpot, e2el
+bash vllm_bench_with_gpu.sh \
+    --model-path /data/model/Qwen3-32B \
+    --dtype fp16 \
+    --gpu-num 8 \
+    --threshold "ttft:400 tpot:50"
+```  
+# 4. log 解析
 log 自动保存在./bench_logs/Qwen3-32B_tp8_dtypefp16_< time > 目录：
 - Qwen3-32B_vllm_result.json 保存每个测试项的结果（已自动拼接 GPU util 等相关信息）,保存形式参看[result.json](realtime_bench_plot/test_log.json)
 - gpu_utilization_c<并发数>_in<输入>_out<输出> ：保存每次 benchmark 测试对应的 GPU 监控信息，包括显存占用、GPU 利用率及温度。
@@ -40,8 +54,8 @@ log 自动保存在./bench_logs/Qwen3-32B_tp8_dtypefp16_< time > 目录：
   - result.log: 基于 raw.log 筛选并统计 GPU 数据，默认条件为 GPU 利用率 >10 且显存占用标准差 <2，输出时间维度的平均结果。
 - client_log：保存没个测试项对应 vllm serve bench 原生日志
 
-## 3.2 实时解析
-可实时监控各测试项性能，用于探索性能。
+## 4.1 实时解析
+可实时可视化监控各测试项性能，用于探索性能。
 ```shell
 pip install streamlit
 
