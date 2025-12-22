@@ -14,10 +14,12 @@ cat << EOF
 参数列表：
   --model-path PATH        （必填）模型路径
   --gpu-num N              （必填）推理用 GPU 数量，用于生成日志目录以及 GPU util 监控
-  --model-name NAME        模型服务名，缺省则自动从路径推断（不做大小写转换）
-  --dtype xxx              推理精度，仅用于生成日志标记
-  --port PORT              默认: 8000
-  --host HOST              默认: localhost
+  --model-name NAME         (可选) 模型服务名，缺省则自动从路径推断（不做大小写转换）
+  --dtype xxx               (可选) 推理精度，仅用于生成日志标记
+  --port PORT               (可选) 默认: 8000
+  --host HOST               (可选) 默认: localhost
+  --threshold THRESHOLD     (可选) 监控阈值，格式: "ttft:100 tpot:50", 单位 ms, 允许的指标: ttft, tpot, e2el
+  --help, -h                显示此帮助信息
 示例：
   bash $0 \\
     --model-path /home/dist/DeepSeek-Coder-V2-Lite-Instruct \\
@@ -30,45 +32,84 @@ cat << EOF
 EOF
 }
 
-# ---- 必填参数 ----
-MODEL_PATH=""
-MODEL_NAME=""
+cleanup_threshold_monitor() {
+  echo ""
+  echo "🧹 正在清理后台监控进程..."
+
+  if [[ -n "$MONITOR_PID" ]] && kill -0 "$MONITOR_PID" 2>/dev/null; then
+    echo "🛑 停止监控进程 PID=$MONITOR_PID"
+    kill "$MONITOR_PID"
+    wait "$MONITOR_PID" 2>/dev/null
+  fi
+
+  echo "✅ 清理完成"
+}
+trap cleanup_threshold_monitor EXIT INT TERM
+
+auto_select_with_threshold() {
+    # ---- 启动实时监控程序（后台）----
+    if [[ -n "$THRESHOLD" ]]; then
+      echo "👀 启动实时监控程序，阈值: $THRESHOLD"
+      python ./utils/auto_batch_selector.py \
+        --json-file "$LOG_FILE" \
+        --threshold "$THRESHOLD" \
+        --output "$best_signal_file" &
+      MONITOR_PID=$!
+      echo "📡 监控进程 PID=$MONITOR_PID"
+    fi
+}
+
+
+
+parse_args() {
+    # ---- 参数解析 ----
+    while [[ "$#" -gt 0 ]]; do
+        case $1 in
+            --model-path) MODEL_PATH="$2"; shift ;;
+            --model-name) MODEL_NAME="$2"; shift ;;
+            --gpu-num) GPU_NUM="$2"; shift ;;
+            --port) PORT="$2"; shift ;;
+            --host) HOST="$2"; shift ;;
+            --threshold) THRESHOLD="$2"; shift ;;
+            --dtype) DTYPE="$2"; shift ;;
+            --help|-h) show_help; exit 0 ;;
+            *) echo "未知参数: $1"; exit 1 ;;
+        esac
+        shift
+    done
+
+    # 如果未指定 model-name，则自动取路径最后一级目录名
+    if [[ -z "$MODEL_NAME" ]]; then
+        MODEL_NAME=$(basename "${MODEL_PATH%/}")
+        echo "ℹ️ 未指定 --model-name，自动使用模型名: $MODEL_NAME"
+    fi
+
+    # ---- 校验必填项 ----
+    if [[ -z "$MODEL_PATH" ]]; then
+        echo "❌ 错误: 必须传入 --model-path 参数！"
+        exit 1
+    fi
+    if [[ -z "$GPU_NUM" ]]; then
+        echo "❌ 错误: 必须传入 --gpu-num 参数！"
+        exit 1
+    fi
+}
+parse_args "$@"
 
 # ---- 默认参数 ----
 HOST="localhost"
 PORT=8000
 DATASET_NAME="random"
 
-# ---- 参数解析 ----
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --model-path) MODEL_PATH="$2"; shift ;;
-        --model-name) MODEL_NAME="$2"; shift ;;
-        --gpu-num) GPU_NUM="$2"; shift ;;
-        --port) PORT="$2"; shift ;;
-        --host) HOST="$2"; shift ;;
-        --help|-h) show_help; exit 0 ;;
-        *) echo "未知参数: $1"; exit 1 ;;
-    esac
-    shift
-done
+# ---- 创建日志目录 ----
+LOG_DIR="./vllm_bench_logs/${MODEL_NAME}_tp${GPU_NUM}${DTYPE:+_dtype${DTYPE}}_$(date +%Y%m%d_%H%M%S)"
+CLIENT_LOG_DIR="$LOG_DIR/client_log"
+mkdir -p "$CLIENT_LOG_DIR"
 
-# ---- 校验必填项 ----
-if [[ -z "$MODEL_PATH" ]]; then
-    echo "❌ 错误: 必须传入 --model-path 参数！"
-    exit 1
-fi
 
-if [[ -z "$GPU_NUM" ]]; then
-    echo "❌ 错误: 必须传入 --gpu-num 参数！"
-    exit 1
-fi
-
-# 如果未指定 model-name，则自动取路径最后一级目录名
-if [[ -z "$MODEL_NAME" ]]; then
-    MODEL_NAME=$(basename "${MODEL_PATH%/}")
-    echo "ℹ️ 未指定 --model-name，自动使用模型名: $MODEL_NAME"
-fi
+## ---- 定义结果日志文件 ----
+best_signal_file="./utils/best_signal.json"
+LOG_FILE="$LOG_DIR/${MODEL_NAME}_vllm_result.json"
 
 # ---- 定义测试组合 ----
 CONCURRENCY_LIST=(1 2 4 8 16 32 64 128)
@@ -101,11 +142,6 @@ LENGTH_PAIRS=(
   "1024 16384"
 )
 
-# ---- 创建日志目录 ----
-# LOG_DIR="./vllm_bench_logs/${MODEL_NAME}_$(date +%Y%m%d_%H%M%S)"
-LOG_DIR="./vllm_bench_logs/${MODEL_NAME}_tp${GPU_NUM}_dtype${DTYPE}_$(date +%Y%m%d_%H%M%S)"
-CLIENT_LOG_DIR="$LOG_DIR/client_log"
-mkdir -p "$CLIENT_LOG_DIR"
 
 echo "============================================"
 echo "🚀 启动 vLLM 批量性能测试"
@@ -116,12 +152,15 @@ echo "Port:        $PORT"
 echo "日志输出目录: $LOG_DIR"
 echo "============================================"
 
+# ---- 启动自动选择监控（如果设置了阈值）----
+auto_select_with_threshold
+
 # ---- 执行批量测试 ----
-for conc in "${CONCURRENCY_LIST[@]}"; do
-  for pair in "${LENGTH_PAIRS[@]}"; do
+for pair in "${LENGTH_PAIRS[@]}"; do
+  for conc in "${CONCURRENCY_LIST[@]}"; do
     IFS=' ' read -r INPUT_LEN OUTPUT_LEN <<< "$pair"
     echo "▶️ 并发: ${conc}, 输入: ${INPUT_LEN}, 输出: ${OUTPUT_LEN}"
-    LOG_FILE=$LOG_DIR/${MODEL_NAME}_vllm_result.json
+
     GPU_LOG_DIR="${LOG_DIR}/gpu_utilization_c${conc}_in${INPUT_LEN}_out${OUTPUT_LEN}"
     python ../../gpu-monitor/mt-gmi-utilization.py \
       --gpu-num "${GPU_NUM}" \
@@ -165,6 +204,11 @@ for conc in "${CONCURRENCY_LIST[@]}"; do
 
     echo "⏳ 等待系统稳定(60s)..."
     sleep 60  # 等待一段时间，确保系统稳定
+
+    if [[ -f "$best_signal_file" ]]; then
+      echo "⚠️ input_len=${INPUT_LEN}, output_len=${OUTPUT_LEN} 在满足${THRESHOLD} 条件下的最优并发数为：${conc}"
+      rm "$best_signal_file"
+    fi
 
   done
 done
