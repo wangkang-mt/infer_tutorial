@@ -1,0 +1,54 @@
+# gpu_type + plugin_type + is_mla_model_tag(version)
+- name: s4000_vllm_musa_true_0
+  match:
+    gpu_name: 'MTT S4000'
+    plugin_type: vllm_musa
+    frame:
+      name: vllm
+      version: ">0.8.4"
+    is_mla_model: true
+  params:
+    block_size: 16
+    pipeline_parallel_size: 1   # TODO（wangkang）: 单机为1 双机为2，后续通过检测自动配置
+    compilation-config: '{"cudagraph_capture_sizes": [1,2,3,4,5,6,7,8,10,12,14,16,18,20,24,28,30], "simple_cuda_graph": true}'
+  notes:
+    - "当前 cudagraph_capture_sizes 为保守配置"
+    - "在显存充足、并发较大的场景下，可扩展为："
+    - "[1,2,3,4,5,6,7,8,10,12,14,16,18,20,24,28,30,60,128,256]"
+
+- name: s4000_vllm_musa_false_0
+  match:
+    gpu_name: 'MTT S4000'
+    plugin_type: vllm_musa
+    frame:
+      name: vllm
+      version: ">0.8.4"
+    is_mla_model: false
+  params:
+    block_size: 32
+    pipeline_parallel_size: 1  # TODO（wangkang）: 单机为1 双机为2，后续通过检测自动配置
+    compilation-config: '{"cudagraph_capture_sizes": [1,2,3,4,5,6,7,8,10,12,14,16,18,20,24,28,30], "simple_cuda_graph": true}'
+  notes:
+    - "当前 cudagraph_capture_sizes 为保守配置"
+    - "在显存充足、并发较大的场景下，可扩展为："
+    - "[1,2,3,4,5,6,7,8,10,12,14,16,18,20,24,28,30,60,128,256]"
+
+
+- name: s5000_vllm_musa_0
+  match:
+    gpu_name: 'MTT S5000'
+    plugin_type: vllm_musa
+    frame:
+      name: vllm
+      version: ">0.8.4"
+  params:
+    block_size: 64   
+    pipeline_parallel_size: 1
+    compilation_config: '{"cudagraph_capture_sizes": [1,2,3,4,5,6,7,8,10,12,14,16,18,20,24,28,30], "simple_cuda_graph": true}'
+  env:
+    VLLM_USE_V1: "0"
+  notes:
+    - "当前 cudagraph_capture_sizes 为保守配置"
+    - "在显存充足、并发较大的场景下，可扩展为："
+    - "[1,2,3,4,5,6,7,8,10,12,14,16,18,20,24,28,30,60,128,256]"
+  
