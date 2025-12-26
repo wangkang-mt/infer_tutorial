@@ -138,14 +138,22 @@ class CommandBuilder:
         :param kwargs: 手动参数或环境变量
         :return: 字典包含 command 列表、command_str、env 等
         """
+        base_command_list = base_command.split()
+        extra_params_list = extra_params_list or []
+
         matched_rule = self._match_rule(runtime_env)
         if not matched_rule:
-            raise ValueError(f"未找到匹配的配置规则: {runtime_env}")
+            final_command = base_command_list + extra_params_list
+            return {
+                "command": final_command,
+                "command_str": " ".join(final_command),
+                "default_rule": None,
+            }
         
         rule_params = matched_rule.get("params", {})
         rule_env = matched_rule.get("env", {})
 
-        base_command_list = base_command.split()
+        
 
         extra_params_dict = self.preprocess_extra_params(extra_params_list or [])
 
