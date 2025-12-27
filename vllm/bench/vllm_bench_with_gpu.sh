@@ -158,19 +158,29 @@ echo "============================================"
 # ---- 启动自动选择监控（如果设置了阈值）----
 auto_select_with_threshold
 
-# ---- 执行批量测试 ----
-for pair in "${LENGTH_PAIRS[@]}"; do
-  for conc in "${CONCURRENCY_LIST[@]}"; do
-    IFS=' ' read -r INPUT_LEN OUTPUT_LEN <<< "$pair"
-    echo "▶️ 并发: ${conc}, 输入: ${INPUT_LEN}, 输出: ${OUTPUT_LEN}"
+TASKS_JSON=$(python ./utils/bench_task_generator.py ./utils/bench.cfg)
+TASKS=$(echo "$TASKS_JSON" | jq -c '.[]')  # 单行JSON对象
 
-    GPU_LOG_DIR="${LOG_DIR}/gpu_utilization_c${conc}_in${INPUT_LEN}_out${OUTPUT_LEN}"
+# ---- 执行批量测试 ----
+for task in $TASKS; do
+    INPUT_LEN=$(echo "$task" | jq -r '.input_len')
+    OUTPUT_LEN=$(echo "$task" | jq -r '.output_len')
+    CONCURRENCY=$(echo "$task" | jq -r '.concurrency')
+    NUM_REQUESTS=$(echo "$task" | jq -r '.num_requests')
+    TASK_MODE=$(echo "$task" | jq -r '.task_mode')
+
+    SKIPPED_COMBOS=()
+    combo="${INPUT_LEN}_${OUTPUT_LEN}"
+
+    echo "▶️ 请求：$NUM_REQUESTS 并发: $CONCURRENCY, 输入: $INPUT_LEN, 输出: $OUTPUT_LEN"
+
+    GPU_LOG_DIR="${LOG_DIR}/gpu_utilization_c${CONCURRENCY}_in${INPUT_LEN}_out${OUTPUT_LEN}"
     python ../../gpu-monitor/mt-gmi-utilization.py \
       --gpu-num "${GPU_NUM}" \
       --interval 2 \
       --gpu-utilization-threshold 10.0 \
       --log-path "$GPU_LOG_DIR" \
-      --metadata "model_name=${MODEL_NAME} concurrency=${conc} input_len=${INPUT_LEN} output_len=${OUTPUT_LEN}" &
+      --metadata "model_name=${MODEL_NAME} concurrency=${CONCURRENCY} input_len=${INPUT_LEN} output_len=${OUTPUT_LEN}" &
 
     GPU_MONITOR_PID=$!
     echo "⚙ GPU 监控启动, PID=$GPU_MONITOR_PID"
@@ -178,18 +188,18 @@ for pair in "${LENGTH_PAIRS[@]}"; do
     VLLM_BENCH_LOG_ARGS="--save-result \
             --append-result \
             --result-filename ${LOG_FILE} \
-            --metadata model_name=${MODEL_NAME} concurrency=${conc} input_len=${INPUT_LEN} output_len=${OUTPUT_LEN}"
+            --metadata model_name=${MODEL_NAME} concurrency=${CONCURRENCY} input_len=${INPUT_LEN} output_len=${OUTPUT_LEN}"
     bash vllm_bench.sh \
       --model-path "$MODEL_PATH" \
       --model-name "$MODEL_NAME" \
       --host "$HOST" \
       --port "$PORT" \
-      --max-concurrency "$conc" \
-      --num-prompts "$conc" \
+      --max-concurrency "$CONCURRENCY" \
+      --num-prompts "$NUM_REQUESTS" \
       --input-len "$INPUT_LEN" \
       --output-len "$OUTPUT_LEN" \
       --dataset "$DATASET_NAME" \
-      --extra $VLLM_BENCH_LOG_ARGS >> ${CLIENT_LOG_DIR}/c"$conc"_i"$INPUT_LEN"_o"$OUTPUT_LEN".log 2>&1
+      --extra $VLLM_BENCH_LOG_ARGS >> ${CLIENT_LOG_DIR}/c"$CONCURRENCY"_i"$INPUT_LEN"_o"$OUTPUT_LEN".log 2>&1
 
     # 终止 GPU 监控
     kill "$GPU_MONITOR_PID"
@@ -208,12 +218,17 @@ for pair in "${LENGTH_PAIRS[@]}"; do
     echo "⏳ 等待系统稳定(60s)..."
     sleep 60  # 等待一段时间，确保系统稳定
 
-    if [[ -f "$best_signal_file" ]]; then
+    if [[ "$TASK_MODE" == "grid" ]] && [[ -f "$best_signal_file" ]]; then
+      SKIPPED_COMBOS+=("$combo")
       rm "$best_signal_file"
-      continue 2  # 跳出当前并发循环，进入下一个长度对测试
+      continue
     fi
 
-  done
+    # 跳过已标记组合
+    if [[ " ${SKIPPED_COMBOS[@]} " =~ " ${combo} " ]]; then
+        continue
+    fi
+
 done
 
 echo "🎯 所有批量测试已完成！结果日志保存在: $LOG_DIR"

@@ -2,6 +2,9 @@ import argparse
 import json
 import time
 import streamlit as st
+import zipfile
+import io
+from pathlib import Path
 
 from realtime_bench_core import (
     parse_metadata_list,
@@ -45,7 +48,42 @@ if "json-file" in qp and qp["json-file"]:
 # ---------------------------
 # Streamlit UI
 # ---------------------------
-st.title("🔥 VLLM 实时吞吐监控 Dashboard")
+st.title("🔥 vLLM 实时吞吐监控 Dashboard")
+
+
+# 侧边栏：显示配置和下载功能
+with st.sidebar:
+    st.header("⚙️ 配置与工具")
+    
+    # 显示当前 JSON 文件路径
+    st.markdown(f"**JSON 文件**: `{JSON_FILE}`")
+    
+    # 生成和提供下载按钮
+    try:
+        json_path = Path(JSON_FILE).resolve()
+        parent_dir = json_path.parent
+        
+        # 创建 ZIP 文件（内存中）
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for file_path in parent_dir.rglob("*"):
+                if file_path.is_file():
+                    arcname = file_path.relative_to(parent_dir.parent)
+                    zip_file.write(file_path, arcname=arcname)
+        
+        zip_buffer.seek(0)
+        
+        # 提供下载按钮
+        st.download_button(
+            label="📦 下载目录（ZIP）",
+            data=zip_buffer.getvalue(),
+            file_name=f"{parent_dir.name}.zip",
+            mime="application/zip",
+            key="download_dir"
+        )
+        st.success(f"✅ 已准备好下载 `{parent_dir.name}/` 目录")
+    except Exception as e:
+        st.error(f"❌ 无法生成下载文件: {str(e)}")
 
 # 显示 metadata
 if metadata_dict:
