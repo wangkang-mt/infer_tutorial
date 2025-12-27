@@ -229,7 +229,6 @@ for task in $TASKS; do
         continue
     fi
 
-  done
 done
 
 echo "🎯 所有批量测试已完成！结果日志保存在: $LOG_DIR"
