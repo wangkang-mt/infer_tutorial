@@ -14,7 +14,7 @@ def get_package_info(package_name: str) -> str:
 
 
 
-def run_cmd(command: Union[str, list[str]], shell: bool = False) -> tuple[int, str, str]:
+def run_cmd(command: Union[str, list[str]], shell: bool = True) -> tuple[int, str, str]:
     process = subprocess.run(
             command,
             stdout=subprocess.PIPE,
@@ -24,3 +24,8 @@ def run_cmd(command: Union[str, list[str]], shell: bool = False) -> tuple[int, s
         )
     
     return process.stdout.decode('utf-8'), process.stderr.decode('utf-8'), process.returncode
+
+
+if __name__ == "__main__":
+    print(get_package_info("vllm"))
+    print(get_package_info("vllm_musa"))

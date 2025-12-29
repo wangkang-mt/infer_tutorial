@@ -1,7 +1,21 @@
 import re
 from dataclasses import dataclass
 from typing import Literal, Dict
-from .util import get_package_info, run_cmd
+
+# 支持两种运行方式：作为包导入（推荐）和直接运行脚本（用于调试）
+try:
+    # 当作为包导入时（例如 `from utils import EnvDetector`）使用相对导入
+    from .util import get_package_info, run_cmd
+except (ImportError, SystemError):
+    # 当直接运行脚本（`python env_detector.py`）时，包上下文不存在，尝试把仓库根加入 sys.path
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[1]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    # 现在可以使用绝对导入
+    from utils.util import get_package_info, run_cmd
 
 
 @dataclass
@@ -37,8 +51,8 @@ class EnvDetector:
     
     def _get_framework_info(self) -> Dict[str, str]:
         try:
-            framework_version = get_package_info("vllm").base_version
-            plugin_version = get_package_info("vllm_musa").base_version
+            framework_version = get_package_info("vllm")
+            plugin_version = get_package_info("vllm_musa")
         except Exception as e:
             # 如果包不存在，使用默认值
             framework_version = "unknown"
@@ -85,3 +99,9 @@ class EnvDetector:
             return mp_count // 2
         else:
             raise RuntimeError("Failed to extract multiProcessorCount from musaInfo output.")
+        
+# Example usage:
+
+if __name__ == "__main__":
+    env = EnvDetector.detect(EnvDetector)
+    print(env)

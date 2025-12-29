@@ -107,11 +107,12 @@ class CommandBuilder:
 
         return extra_params, remaining_rule_params
 
-    def _build_env_prefix(self, rule_env: dict, kwargs: dict) -> list[str]:
-        """收集环境变量"""
+    def _collect_env(self, rule_env: dict, kwargs: dict) -> dict:
+        """收集环境变量（不参与命令拼接）"""
         env = {}
         env.update(rule_env or {})
-        return [f"{k}={v}" for k, v in env.items()]
+        # 如果后续支持手动 env 覆盖，可在这里 merge kwargs
+        return env
 
     def preprocess_extra_params(self, extra_params_list: list) -> dict:
         """预处理额外参数列表为字典"""
@@ -126,6 +127,9 @@ class CommandBuilder:
                 else:
                     params_dict[params] = True
                     i += 1
+            elif i == len(extra_params_list) - 1:
+                params_dict[params] = True
+                i += 1
 
         return params_dict
 
@@ -147,6 +151,7 @@ class CommandBuilder:
             return {
                 "command": final_command,
                 "command_str": " ".join(final_command),
+                "env": {},
                 "default_rule": None,
             }
         
@@ -161,12 +166,12 @@ class CommandBuilder:
         self._append_cli_param(base_command_list, manual_params)
         self._append_cli_param(base_command_list, remaining_rule_params)
 
-        env_prefix = self._build_env_prefix(rule_env, kwargs)
-        final_command = env_prefix + base_command_list
+        final_command = base_command_list
 
         return {
             "command": final_command,
             "command_str": " ".join(final_command),
+            "env": self._collect_env(rule_env, kwargs),
             "default_rule": matched_rule, 
         }
 
@@ -177,25 +182,6 @@ class VLLMCommandBuilder(CommandBuilder):
     def __init__(self, config_path: str):
         super().__init__(config_path)
 
-    def _match_rule(self, runtime_env: RuntimeEnv) -> Dict[str, Any]:
-        """
-        增强匹配逻辑：在原 CommandBuilder 匹配基础上，
-        可以针对 vllm 的特殊规则扩展，比如 MLA 模型额外匹配
-        """
-        matched_rule = super()._match_rule(runtime_env)
-        if not matched_rule:
-            return None
-        
-        # 示例：如果是 MLA 模型，优先匹配 block_size 较小的规则
-        if getattr(runtime_env, "is_mla_model", False):
-            # 在规则中找 block_size <= 32 的优先返回
-            mla_rules = [
-                r for r in self.config_rules
-                if r.get("match", {}).get("is_mla_model") and r.get("params", {}).get("block_size", 9999) <= 32
-            ]
-            if mla_rules:
-                matched_rule = mla_rules[0]
-        return matched_rule
 
     def build_command(self, runtime_env: RuntimeEnv, extra_params_list: list = None, **kwargs) -> Dict[str, Any]:
         """固定 base_command 为 'vllm serve'"""
@@ -224,3 +210,4 @@ if __name__ == "__main__":
     )
 
     print("启动命令:", result["command_str"])
+    print("使用规则:", result["default_rule"])
