@@ -57,7 +57,7 @@ def main():
         if "is_mla_model" in custom_args:
             runtime_env.is_mla_model = custom_args.pop("is_mla_model")
         else:
-            runtime_env.is_mla_model = True  # 默认值
+            runtime_env.is_mla_model = False  # 默认值
     except Exception as e:
         print(f"环境检测失败: {str(e)}")
         return

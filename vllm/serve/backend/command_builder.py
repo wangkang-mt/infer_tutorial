@@ -127,7 +127,7 @@ class CommandBuilder:
                 else:
                     params_dict[params] = True
                     i += 1
-            elif i == len(extra_params_list) - 1:
+            else:
                 params_dict[params] = True
                 i += 1
 
