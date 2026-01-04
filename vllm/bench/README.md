@@ -23,7 +23,8 @@ bash vllm_bench.sh -h
 ## 3.1 配置任务参数(utils/bench.cfg)
 ## 3.2 启动测试
 ```shell
-
+apt update
+apt install jq
 bash vllm_bench_with_gpu.sh \
     --model-path /data/model/Qwen3-32B \
     --dtype fp16 \
