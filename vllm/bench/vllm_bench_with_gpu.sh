@@ -114,37 +114,6 @@ mkdir -p "$CLIENT_LOG_DIR"
 best_signal_file="./utils/best_signal.json"
 LOG_FILE="$LOG_DIR/${MODEL_NAME}_vllm_result.json"
 
-# ---- 定义测试组合 ----
-CONCURRENCY_LIST=(1 2 4 8 16 32 64 128)
-LENGTH_PAIRS=(
-  # 平衡场景（10种）
-  "256 256"
-  "512 512"
-  "1024 1024"
-  "2048 2048"
-  "4096 4096"
-  "8192 8192"
-  "16384 16384"
-  "32768 32768"
-  "65536 65536"
-  "131072 131072"
-  # 不平衡场景（7种）
-  # RAG场景：大输入小输出
-  "2048 1024"
-  "4096 1024"
-
-  # 内容生成：小输入大输出
-  "128 2048"
-
-  # 内容审查/简要分析：大输入小输出
-  "2048 128"
-
-  # 长复杂推理
-  "1024 5000"
-  "1024 8192"
-  "1024 16384"
-)
-
 
 echo "============================================"
 echo "🚀 启动 vLLM 批量性能测试"
@@ -161,6 +130,9 @@ auto_select_with_threshold
 TASKS_JSON=$(python ./utils/bench_task_generator.py ./utils/bench.cfg)
 TASKS=$(echo "$TASKS_JSON" | jq -c '.[]')  # 单行JSON对象
 
+# ---- 全局跳过列表 ----
+SKIPPED_COMBOS=()
+
 # ---- 执行批量测试 ----
 for task in $TASKS; do
     INPUT_LEN=$(echo "$task" | jq -r '.input_len')
@@ -169,10 +141,14 @@ for task in $TASKS; do
     NUM_REQUESTS=$(echo "$task" | jq -r '.num_requests')
     TASK_MODE=$(echo "$task" | jq -r '.task_mode')
 
-    SKIPPED_COMBOS=()
     combo="${INPUT_LEN}_${OUTPUT_LEN}"
+    # 跳过已标记组合
+    if [[ " ${SKIPPED_COMBOS[@]} " =~ " ${combo} " ]]; then
+        echo "⏭️  跳过测试: IO=${combo} batch=${CONCURRENCY} (已找到最佳配置)"
+        continue
+    fi
 
-    echo "▶️ 请求：$NUM_REQUESTS 并发: $CONCURRENCY, 输入: $INPUT_LEN, 输出: $OUTPUT_LEN"
+    echo "▶️ 请求：$NUM_REQUESTS, 并发: $CONCURRENCY, 输入: $INPUT_LEN, 输出: $OUTPUT_LEN"
 
     GPU_LOG_DIR="${LOG_DIR}/gpu_utilization_c${CONCURRENCY}_in${INPUT_LEN}_out${OUTPUT_LEN}"
     python ../../gpu-monitor/mt-gmi-utilization.py \
@@ -222,11 +198,6 @@ for task in $TASKS; do
       SKIPPED_COMBOS+=("$combo")
       rm "$best_signal_file"
       continue
-    fi
-
-    # 跳过已标记组合
-    if [[ " ${SKIPPED_COMBOS[@]} " =~ " ${combo} " ]]; then
-        continue
     fi
 
 done
